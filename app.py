@@ -167,7 +167,6 @@ else:
                 file_name="Binance_Data.xlsx"
             )
 
-        ]]
         df.columns = ["Symbol", "Price", "24h %", "Volume", "Quote Volume"]
         df[["Price","24h %","Volume","Quote Volume"]] = \
             df[["Price","24h %","Volume","Quote Volume"]].astype(float)
