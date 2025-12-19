@@ -1,7 +1,7 @@
 
 streamlit
 requests
-pandas
-plotly
 beautifulsoup4
-lxml
+pandas
+xlsxwriter
+
