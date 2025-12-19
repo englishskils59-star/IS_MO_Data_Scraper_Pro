@@ -1,122 +1,134 @@
 import streamlit as st
 import requests
-import pandas as pd
 from bs4 import BeautifulSoup
-import plotly.express as px
+import pandas as pd
+from datetime import datetime
 
-st.set_page_config(
-    page_title="IS.MO Data Scraper Pro",
-    layout="wide"
-)
+st.set_page_config(page_title="IS.MO Data Scraper Pro", layout="wide")
 
-# =====================
-# Language
-# =====================
-lang = st.sidebar.selectbox("Language / اللغة", ["English", "العربية"])
+# -----------------------------
+# Language toggle
+# -----------------------------
+lang = st.selectbox("Language / اللغة", ["English", "العربية"])
 
 def t(en, ar):
     return en if lang == "English" else ar
 
-# =====================
+# -----------------------------
 # UI
-# =====================
-st.title("IS.MO Data Scraper Pro")
+# -----------------------------
+st.title("🕷️ IS.MO Data Scraper Pro")
 
 url = st.text_input(t("Website URL", "رابط الموقع"))
+selector = st.text_input(
+    t("CSS Selector (optional)", "CSS Selector (اختياري)"),
+    placeholder="table, .class, #id"
+)
+
 data_type = st.selectbox(
     t("Data Type", "نوع البيانات"),
     ["Table", "Text", "Images"]
 )
 
-selector = st.text_input(
-    t("CSS Selector (optional)", "CSS Selector (اختياري)")
+selected_date = st.date_input(
+    t("Filter by date (optional)", "فلترة حسب التاريخ (اختياري)"),
+    value=None
 )
 
-# =====================
-# Scraper
-# =====================
-def scrape_static(url, selector, data_type):
+# -----------------------------
+# Helper functions
+# -----------------------------
+def scrape_static(url):
     headers = {
         "User-Agent": "Mozilla/5.0"
     }
-    html = requests.get(url, headers=headers, timeout=15).text
-    soup = BeautifulSoup(html, "html.parser")
+    r = requests.get(url, headers=headers, timeout=20)
+    r.raise_for_status()
+    return BeautifulSoup(r.text, "html.parser")
 
-    if data_type == "Text":
-        elements = soup.select(selector) if selector else soup.find_all(text=True)
-        return [el.strip() for el in elements if el.strip()]
+def filter_by_date(data, selected_date):
+    if not selected_date:
+        return data
 
-    if data_type == "Images":
-        images = soup.select(selector) if selector else soup.find_all("img")
-        return [img.get("src") for img in images if img.get("src")]
+    date_str = selected_date.strftime("%Y-%m-%d")
+    filtered = []
 
-    if data_type == "Table":
-        table = soup.select_one(selector) if selector else soup.find("table")
-        rows = []
-        for tr in table.find_all("tr"):
-            rows.append([td.get_text(strip=True) for td in tr.find_all(["td", "th"])])
-        return rows
+    for row in data:
+        text = " ".join(row)
+        if date_str in text:
+            filtered.append(row)
 
-# =====================
-# Run Button
-# =====================
-if st.button(t("Run Scraping", "تشغيل الاستخراج")):
+    return filtered
 
+# -----------------------------
+# Scraping Logic
+# -----------------------------
+if st.button(t("Start Scraping", "ابدأ السحب")):
     if not url:
-        st.warning(t("Please enter a URL", "من فضلك أدخل رابط الموقع"))
+        st.error(t("Please enter a URL", "من فضلك أدخل رابط الموقع"))
     else:
         try:
-            with st.spinner(t("Scraping in progress...", "جاري الاستخراج...")):
-                data = scrape_static(url, selector, data_type)
+            soup = scrape_static(url)
 
-            if not data:
-                st.warning(t("No data found", "لم يتم العثور على بيانات"))
-            
-            # ===== TABLE =====
-            elif data_type == "Table":
-                df = pd.DataFrame(data[1:], columns=data[0])
-                st.subheader(t("Preview", "معاينة"))
-                st.dataframe(df.head(50), use_container_width=True)
+            # -------- TABLE --------
+            if data_type == "Table":
+                table = soup.select_one(selector) if selector else soup.find("table")
 
-                if df.shape[1] >= 2:
-                    fig = px.bar(
-                        df,
-                        x=df.columns[0],
-                        y=df.columns[1],
-                        title=t("Chart", "رسم بياني")
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
+                if table is None:
+                    st.warning(t("No table found on this page", "لا يوجد جدول في الصفحة"))
+                else:
+                    rows = []
+                    for tr in table.find_all("tr"):
+                        cells = [td.get_text(strip=True) for td in tr.find_all(["td", "th"])]
+                        if cells:
+                            rows.append(cells)
 
-                st.download_button(
-                    t("Download CSV", "تحميل CSV"),
-                    df.to_csv(index=False),
-                    "data.csv"
-                )
+                    rows = filter_by_date(rows, selected_date)
 
-            # ===== TEXT =====
+                    if not rows:
+                        st.warning(t("No data matches the selected date", "لا توجد بيانات مطابقة للتاريخ"))
+                    else:
+                        df = pd.DataFrame(rows[1:], columns=rows[0])
+                        st.dataframe(df, use_container_width=True)
+
+            # -------- TEXT --------
             elif data_type == "Text":
-                df = pd.DataFrame(data, columns=["Text"])
-                st.subheader(t("Preview", "معاينة"))
-                st.dataframe(df.head(50), use_container_width=True)
+                elements = soup.select(selector) if selector else soup.find_all("p")
 
-                st.download_button(
-                    t("Download CSV", "تحميل CSV"),
-                    df.to_csv(index=False),
-                    "text.csv"
-                )
+                texts = []
+                for el in elements:
+                    txt = el.get_text(strip=True)
+                    if txt:
+                        texts.append([txt])
 
-            # ===== IMAGES =====
+                texts = filter_by_date(texts, selected_date)
+
+                if not texts:
+                    st.warning(t("No text found", "لم يتم العثور على نصوص"))
+                else:
+                    df = pd.DataFrame(texts, columns=[t("Text", "النص")])
+                    st.dataframe(df, use_container_width=True)
+
+            # -------- IMAGES --------
             elif data_type == "Images":
-                st.subheader(t("Preview", "معاينة"))
-                for img in data[:20]:
-                    st.image(img)
+                images = soup.select(selector) if selector else soup.find_all("img")
 
-                df = pd.DataFrame(data, columns=["Image URL"])
-                st.download_button(
-                    t("Download CSV", "تحميل CSV"),
-                    df.to_csv(index=False),
-                    "images.csv"
-                )
+                img_urls = []
+                for img in images:
+                    src = img.get("src")
+                    if src and src.startswith("http"):
+                        img_urls.append(src)
+
+                if not img_urls:
+                    st.warning(t("No images found", "لم يتم العثور على صور"))
+                else:
+                    st.image(img_urls, width=200)
 
         except Exception as e:
-            st.error(str(e))
+            st.error(f"Error: {e}")
+
+# -----------------------------
+# Footer
+# -----------------------------
+st.markdown("---")
+st.caption("© IS.MO Data Scraper Pro | Personal Use")
