@@ -125,11 +125,48 @@ elif mode == "Crypto API – Binance":
     limit = st.slider(t("Number of Symbols", "عدد العملات"), 10, 200, 50)
 
     if st.button(t("Fetch Data", "جلب البيانات")):
-        url = "https://api.binance.com/api/v3/ticker/24hr"
-        data = requests.get(url).json()
-        df = pd.DataFrame(data)[[
-            "symbol", "lastPrice", "priceChangePercent",
-            "volume", "quoteVolume"
+       url = "https://api.binance.com/api/v3/ticker/24hr"
+response = requests.get(url, timeout=15)
+
+if response.status_code != 200:
+    st.error("Binance API Error")
+else:
+    data = response.json()
+
+    if not isinstance(data, list) or len(data) == 0:
+        st.warning("No data returned from Binance")
+    else:
+        df = pd.DataFrame(data)
+
+        required_cols = [
+            "symbol",
+            "lastPrice",
+            "priceChangePercent",
+            "volume",
+            "quoteVolume"
+        ]
+
+        missing = [c for c in required_cols if c not in df.columns]
+        if missing:
+            st.error(f"Missing columns: {missing}")
+        else:
+            df = df[required_cols]
+            df.columns = ["Symbol", "Price", "24h %", "Volume", "Quote Volume"]
+
+            for col in ["Price", "24h %", "Volume", "Quote Volume"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
+            df = df.sort_values("Quote Volume", ascending=False).head(limit)
+
+            st.dataframe(df, use_container_width=True)
+            auto_chart(df)
+
+            st.download_button(
+                "Download Excel",
+                export_excel({"Binance_Data": df}),
+                file_name="Binance_Data.xlsx"
+            )
+
         ]]
         df.columns = ["Symbol", "Price", "24h %", "Volume", "Quote Volume"]
         df[["Price","24h %","Volume","Quote Volume"]] = \
