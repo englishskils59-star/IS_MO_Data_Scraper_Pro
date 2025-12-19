@@ -1,5 +1,7 @@
 streamlit
+pandas
 requests
 beautifulsoup4
-pandas
-xlsxwriter
+yfinance
+matplotlib
+openpyxl
